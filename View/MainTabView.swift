@@ -32,10 +32,10 @@ struct MainTabView: View {
                         Text("AI Studio")
                     }
                 
-                LeaderboardView(firebaseManager: firebaseManager)
+                AnalyticsView()
                     .tabItem {
-                        Image(systemName: "trophy.fill")
-                        Text("Liderlik")
+                        Image(systemName: "chart.pie.fill")
+                        Text("Analizler")
                     }
                 
                 NavigationView {

@@ -48,7 +48,7 @@ struct WorkoutRoutineView: View {
                         .padding(.horizontal)
                         
                         ForEach(viewModel.routines) { routine in
-                            NavigationLink(destination: ContentView(exercise: routine.exercises.first!.0)) {
+                            NavigationLink(destination: RoutineExecutionView(viewModel: RoutineExecutionViewModel(routine: routine, poseEstimator: PoseEstimator()))) {
                                 HStack {
                                     VStack(alignment: .leading, spacing: 8) {
                                         Text(routine.title)

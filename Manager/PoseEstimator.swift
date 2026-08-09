@@ -205,6 +205,7 @@ class PoseEstimator: ObservableObject {
                     if elapsed >= 1.0 {
                         repCount += 1
                         GamificationManager.shared.addRep()
+                        WatchConnectivityManager.shared.sendExerciseDataToWatch(exerciseName: currentExercise.rawValue, repCount: repCount)
                         lastStableTime = Date()
                         // Her 5 saniyede bir sesli bildirim yapalım
                         if repCount % 5 == 0 {
@@ -227,6 +228,7 @@ class PoseEstimator: ObservableObject {
                 isDown = false
                 repCount += 1
                 GamificationManager.shared.addRep()
+                WatchConnectivityManager.shared.sendExerciseDataToWatch(exerciseName: currentExercise.rawValue, repCount: repCount)
                 SpeechManager.shared.speak("\(repCount)", force: true)
                 UIImpactFeedbackGenerator(style: .heavy).impactOccurred()
             }
