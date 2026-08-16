@@ -72,6 +72,3 @@ Proje modüler MVVM tasarım desenini kullanmaktadır:
 
 ## 🤝 Katkıda Bulunma
 Katkılarınızı bekliyoruz! Büyük değişiklikler yapmadan önce tartışmak için lütfen bir Issue açın.
-
-## 📄 Lisans
-Bu proje [MIT](https://choosealicense.com/licenses/mit/) lisansı altındadır.
