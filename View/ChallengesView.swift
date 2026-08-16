@@ -36,6 +36,24 @@ struct ChallengesView: View {
                             .foregroundColor(.gray)
                             .padding(.horizontal)
                         
+                        // Liderlik Tablosu Butonu
+                        NavigationLink(destination: LeaderboardView()) {
+                            HStack {
+                                Image(systemName: "trophy.fill")
+                                    .foregroundColor(.yellow)
+                                Text("Global Liderlik Tablosu")
+                                Spacer()
+                                Image(systemName: "chevron.right")
+                            }
+                            .font(.headline)
+                            .foregroundColor(.white)
+                            .padding()
+                            .background(Color.yellow.opacity(0.15))
+                            .cornerRadius(15)
+                            .overlay(RoundedRectangle(cornerRadius: 15).stroke(Color.yellow.opacity(0.3), lineWidth: 1))
+                        }
+                        .padding(.horizontal)
+                        
                         ForEach(challenges) { challenge in
                             ChallengeCard(challenge: challenge, currentSteps: healthManager.dailySteps)
                         }

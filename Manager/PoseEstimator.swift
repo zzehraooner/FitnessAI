@@ -9,18 +9,18 @@ class PoseEstimator: ObservableObject {
     @Published var feedbackMessage: String = "Kameranın karşısına geçin"
     @Published var bodyPoints: [VNHumanBodyPoseObservation.JointName: CGPoint] = [:]
     @Published var repCount: Int = 0
-    
+
     var currentExercise: ExerciseType = .squat
-    
+
     let sequenceHandler = VNSequenceRequestHandler()
-    
+
     private var isDown = false
     private var lastSpokenMessage = ""
     private var lastStableTime: Date?
-    
+
     func processFrame(_ sampleBuffer: CMSampleBuffer) {
         guard let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
-        
+
         let request = VNDetectHumanBodyPoseRequest(completionHandler: bodyPoseHandler)
         do {
             try sequenceHandler.perform([request], on: pixelBuffer, orientation: .up)
@@ -28,19 +28,19 @@ class PoseEstimator: ObservableObject {
             print("Vision error: \(error.localizedDescription)")
         }
     }
-    
+
     func bodyPoseHandler(request: VNRequest, error: Error?) {
         guard let observations = request.results as? [VNHumanBodyPoseObservation],
               let observation = observations.first else { return }
-        
+
         do {
             let recognizedPoints = try observation.recognizedPoints(.all)
-            
+
             var points: [VNHumanBodyPoseObservation.JointName: CGPoint] = [:]
             for (key, point) in recognizedPoints where point.confidence > 0.3 {
                 points[key] = CGPoint(x: point.location.x, y: 1 - point.location.y)
             }
-            
+
             DispatchQueue.main.async {
                 self.bodyPoints = points
                 self.analyzeForm()
@@ -49,157 +49,172 @@ class PoseEstimator: ObservableObject {
             print("Error retrieving points")
         }
     }
-    
+
+    // MARK: - Yardımcı: Çift Taraflı Analiz
+
+    /// İki tarafın sonucunu birleştir: her ikisi de geçerliyse ortalama al,
+    /// sadece biri geçerliyse onu kullan.
+    private func combinedResult(
+        left: (percentage: Double, message: String, state: ExerciseState),
+        right: (percentage: Double, message: String, state: ExerciseState)
+    ) -> (percentage: Double, message: String, state: ExerciseState) {
+        let leftValid  = left.state != .unknown || left.percentage > 0
+        let rightValid = right.state != .unknown || right.percentage > 0
+
+        switch (leftValid, rightValid) {
+        case (true, true):
+            // Her iki taraf da geçerli → ortalama form, daha kötü durum mesajı
+            let avgPct = (left.percentage + right.percentage) / 2.0
+            // Daha düşük form yüzdesinin mesajını göster (daha kritik)
+            let msg = left.percentage <= right.percentage ? left.message : right.message
+            // State: ikisi de down ise down, ikisi de up ise up, aksi unknown
+            let state: ExerciseState = left.state == right.state ? left.state : .unknown
+            return (avgPct, msg, state)
+        case (true, false):
+            return left
+        case (false, true):
+            return right
+        default:
+            return left // İkisi de geçersiz — sol tarafın hata mesajını dön
+        }
+    }
+
+    // MARK: - Form Analizi
+
     private func analyzeForm() {
         let result: (percentage: Double, message: String, state: ExerciseState)
-        
+
         switch currentExercise {
+
         case .squat:
-            let hip = bodyPoints[.leftHip]
-            let knee = bodyPoints[.leftKnee]
-            let ankle = bodyPoints[.leftAnkle]
-            result = ExerciseAnalyzer.analyzeSquat(hip: hip, knee: knee, ankle: ankle)
-            
+            let leftResult  = ExerciseAnalyzer.analyzeSquat(hip: bodyPoints[.leftHip],  knee: bodyPoints[.leftKnee],  ankle: bodyPoints[.leftAnkle])
+            let rightResult = ExerciseAnalyzer.analyzeSquat(hip: bodyPoints[.rightHip], knee: bodyPoints[.rightKnee], ankle: bodyPoints[.rightAnkle])
+            result = combinedResult(left: leftResult, right: rightResult)
+
         case .pushup:
-            let shoulder = bodyPoints[.leftShoulder]
-            let elbow = bodyPoints[.leftElbow]
-            let wrist = bodyPoints[.leftWrist]
-            result = ExerciseAnalyzer.analyzePushup(shoulder: shoulder, elbow: elbow, wrist: wrist)
-            
+            let leftResult  = ExerciseAnalyzer.analyzePushup(shoulder: bodyPoints[.leftShoulder],  elbow: bodyPoints[.leftElbow],  wrist: bodyPoints[.leftWrist])
+            let rightResult = ExerciseAnalyzer.analyzePushup(shoulder: bodyPoints[.rightShoulder], elbow: bodyPoints[.rightElbow], wrist: bodyPoints[.rightWrist])
+            result = combinedResult(left: leftResult, right: rightResult)
+
         case .lunge:
-            let hip = bodyPoints[.leftHip]
-            let knee = bodyPoints[.leftKnee]
-            let ankle = bodyPoints[.leftAnkle]
-            result = ExerciseAnalyzer.analyzeLunge(hip: hip, knee: knee, ankle: ankle)
-            
+            let leftResult  = ExerciseAnalyzer.analyzeLunge(hip: bodyPoints[.leftHip],  knee: bodyPoints[.leftKnee],  ankle: bodyPoints[.leftAnkle])
+            let rightResult = ExerciseAnalyzer.analyzeLunge(hip: bodyPoints[.rightHip], knee: bodyPoints[.rightKnee], ankle: bodyPoints[.rightAnkle])
+            result = combinedResult(left: leftResult, right: rightResult)
+
         case .jumpingJacks:
-            let hip = bodyPoints[.leftHip]
-            let shoulder = bodyPoints[.leftShoulder]
-            let wrist = bodyPoints[.leftWrist]
-            result = ExerciseAnalyzer.analyzeJumpingJacks(hip: hip, shoulder: shoulder, wrist: wrist)
-            
+            let leftResult  = ExerciseAnalyzer.analyzeJumpingJacks(hip: bodyPoints[.leftHip],  shoulder: bodyPoints[.leftShoulder],  wrist: bodyPoints[.leftWrist])
+            let rightResult = ExerciseAnalyzer.analyzeJumpingJacks(hip: bodyPoints[.rightHip], shoulder: bodyPoints[.rightShoulder], wrist: bodyPoints[.rightWrist])
+            result = combinedResult(left: leftResult, right: rightResult)
+
         case .situp:
-            let shoulder = bodyPoints[.leftShoulder]
-            let hip = bodyPoints[.leftHip]
-            let knee = bodyPoints[.leftKnee]
-            result = ExerciseAnalyzer.analyzeSitup(shoulder: shoulder, hip: hip, knee: knee)
-            
+            let leftResult  = ExerciseAnalyzer.analyzeSitup(shoulder: bodyPoints[.leftShoulder],  hip: bodyPoints[.leftHip],  knee: bodyPoints[.leftKnee])
+            let rightResult = ExerciseAnalyzer.analyzeSitup(shoulder: bodyPoints[.rightShoulder], hip: bodyPoints[.rightHip], knee: bodyPoints[.rightKnee])
+            result = combinedResult(left: leftResult, right: rightResult)
+
         case .bicepCurl:
-            let shoulder = bodyPoints[.leftShoulder]
-            let elbow = bodyPoints[.leftElbow]
-            let wrist = bodyPoints[.leftWrist]
-            result = ExerciseAnalyzer.analyzeBicepCurl(shoulder: shoulder, elbow: elbow, wrist: wrist)
-            
+            let leftResult  = ExerciseAnalyzer.analyzeBicepCurl(shoulder: bodyPoints[.leftShoulder],  elbow: bodyPoints[.leftElbow],  wrist: bodyPoints[.leftWrist])
+            let rightResult = ExerciseAnalyzer.analyzeBicepCurl(shoulder: bodyPoints[.rightShoulder], elbow: bodyPoints[.rightElbow], wrist: bodyPoints[.rightWrist])
+            result = combinedResult(left: leftResult, right: rightResult)
+
         case .shoulderPress:
-            let shoulder = bodyPoints[.leftShoulder]
-            let elbow = bodyPoints[.leftElbow]
-            let wrist = bodyPoints[.leftWrist]
-            result = ExerciseAnalyzer.analyzeShoulderPress(shoulder: shoulder, elbow: elbow, wrist: wrist)
-            
+            let leftResult  = ExerciseAnalyzer.analyzeShoulderPress(shoulder: bodyPoints[.leftShoulder],  elbow: bodyPoints[.leftElbow],  wrist: bodyPoints[.leftWrist])
+            let rightResult = ExerciseAnalyzer.analyzeShoulderPress(shoulder: bodyPoints[.rightShoulder], elbow: bodyPoints[.rightElbow], wrist: bodyPoints[.rightWrist])
+            result = combinedResult(left: leftResult, right: rightResult)
+
         case .deadlift:
-            let shoulder = bodyPoints[.leftShoulder]
-            let hip = bodyPoints[.leftHip]
-            let knee = bodyPoints[.leftKnee]
-            result = ExerciseAnalyzer.analyzeDeadlift(shoulder: shoulder, hip: hip, knee: knee)
-            
+            let leftResult  = ExerciseAnalyzer.analyzeDeadlift(shoulder: bodyPoints[.leftShoulder],  hip: bodyPoints[.leftHip],  knee: bodyPoints[.leftKnee])
+            let rightResult = ExerciseAnalyzer.analyzeDeadlift(shoulder: bodyPoints[.rightShoulder], hip: bodyPoints[.rightHip], knee: bodyPoints[.rightKnee])
+            result = combinedResult(left: leftResult, right: rightResult)
+
         case .highKnees:
-            let shoulder = bodyPoints[.leftShoulder]
-            let hip = bodyPoints[.leftHip]
-            let knee = bodyPoints[.leftKnee]
-            result = ExerciseAnalyzer.analyzeHighKnees(shoulder: shoulder, hip: hip, knee: knee)
-            
+            let leftResult  = ExerciseAnalyzer.analyzeHighKnees(shoulder: bodyPoints[.leftShoulder],  hip: bodyPoints[.leftHip],  knee: bodyPoints[.leftKnee])
+            let rightResult = ExerciseAnalyzer.analyzeHighKnees(shoulder: bodyPoints[.rightShoulder], hip: bodyPoints[.rightHip], knee: bodyPoints[.rightKnee])
+            result = combinedResult(left: leftResult, right: rightResult)
+
         case .lateralRaises:
-            let hip = bodyPoints[.leftHip]
-            let shoulder = bodyPoints[.leftShoulder]
-            let wrist = bodyPoints[.leftWrist]
-            result = ExerciseAnalyzer.analyzeLateralRaises(hip: hip, shoulder: shoulder, wrist: wrist)
-            
+            let leftResult  = ExerciseAnalyzer.analyzeLateralRaises(hip: bodyPoints[.leftHip],  shoulder: bodyPoints[.leftShoulder],  wrist: bodyPoints[.leftWrist])
+            let rightResult = ExerciseAnalyzer.analyzeLateralRaises(hip: bodyPoints[.rightHip], shoulder: bodyPoints[.rightShoulder], wrist: bodyPoints[.rightWrist])
+            result = combinedResult(left: leftResult, right: rightResult)
+
         case .gluteBridge:
-            let shoulder = bodyPoints[.leftShoulder]
-            let hip = bodyPoints[.leftHip]
-            let knee = bodyPoints[.leftKnee]
-            result = ExerciseAnalyzer.analyzeGluteBridge(shoulder: shoulder, hip: hip, knee: knee)
-            
+            let leftResult  = ExerciseAnalyzer.analyzeGluteBridge(shoulder: bodyPoints[.leftShoulder],  hip: bodyPoints[.leftHip],  knee: bodyPoints[.leftKnee])
+            let rightResult = ExerciseAnalyzer.analyzeGluteBridge(shoulder: bodyPoints[.rightShoulder], hip: bodyPoints[.rightHip], knee: bodyPoints[.rightKnee])
+            result = combinedResult(left: leftResult, right: rightResult)
+
         case .calfRaises:
-            let hip = bodyPoints[.leftHip]
-            let knee = bodyPoints[.leftKnee]
-            let ankle = bodyPoints[.leftAnkle]
-            result = ExerciseAnalyzer.analyzeCalfRaises(hip: hip, knee: knee, ankle: ankle)
-            
+            let leftResult  = ExerciseAnalyzer.analyzeCalfRaises(hip: bodyPoints[.leftHip],  knee: bodyPoints[.leftKnee],  ankle: bodyPoints[.leftAnkle])
+            let rightResult = ExerciseAnalyzer.analyzeCalfRaises(hip: bodyPoints[.rightHip], knee: bodyPoints[.rightKnee], ankle: bodyPoints[.rightAnkle])
+            result = combinedResult(left: leftResult, right: rightResult)
+
         case .tricepDips:
-            let shoulder = bodyPoints[.leftShoulder]
-            let elbow = bodyPoints[.leftElbow]
-            let wrist = bodyPoints[.leftWrist]
-            result = ExerciseAnalyzer.analyzeTricepDips(shoulder: shoulder, elbow: elbow, wrist: wrist)
-            
+            let leftResult  = ExerciseAnalyzer.analyzeTricepDips(shoulder: bodyPoints[.leftShoulder],  elbow: bodyPoints[.leftElbow],  wrist: bodyPoints[.leftWrist])
+            let rightResult = ExerciseAnalyzer.analyzeTricepDips(shoulder: bodyPoints[.rightShoulder], elbow: bodyPoints[.rightElbow], wrist: bodyPoints[.rightWrist])
+            result = combinedResult(left: leftResult, right: rightResult)
+
         case .legRaises:
-            let shoulder = bodyPoints[.leftShoulder]
-            let hip = bodyPoints[.leftHip]
-            let knee = bodyPoints[.leftKnee]
-            result = ExerciseAnalyzer.analyzeLegRaises(shoulder: shoulder, hip: hip, knee: knee)
-            
+            let leftResult  = ExerciseAnalyzer.analyzeLegRaises(shoulder: bodyPoints[.leftShoulder],  hip: bodyPoints[.leftHip],  knee: bodyPoints[.leftKnee])
+            let rightResult = ExerciseAnalyzer.analyzeLegRaises(shoulder: bodyPoints[.rightShoulder], hip: bodyPoints[.rightHip], knee: bodyPoints[.rightKnee])
+            result = combinedResult(left: leftResult, right: rightResult)
+
         case .frontRaises:
-            let hip = bodyPoints[.leftHip]
-            let shoulder = bodyPoints[.leftShoulder]
-            let wrist = bodyPoints[.leftWrist]
-            result = ExerciseAnalyzer.analyzeFrontRaises(hip: hip, shoulder: shoulder, wrist: wrist)
-            
+            let leftResult  = ExerciseAnalyzer.analyzeFrontRaises(hip: bodyPoints[.leftHip],  shoulder: bodyPoints[.leftShoulder],  wrist: bodyPoints[.leftWrist])
+            let rightResult = ExerciseAnalyzer.analyzeFrontRaises(hip: bodyPoints[.rightHip], shoulder: bodyPoints[.rightShoulder], wrist: bodyPoints[.rightWrist])
+            result = combinedResult(left: leftResult, right: rightResult)
+
         case .mountainClimbers:
-            let shoulder = bodyPoints[.leftShoulder]
-            let hip = bodyPoints[.leftHip]
-            let knee = bodyPoints[.leftKnee]
-            result = ExerciseAnalyzer.analyzeMountainClimbers(shoulder: shoulder, hip: hip, knee: knee)
-            
+            let leftResult  = ExerciseAnalyzer.analyzeMountainClimbers(shoulder: bodyPoints[.leftShoulder],  hip: bodyPoints[.leftHip],  knee: bodyPoints[.leftKnee])
+            let rightResult = ExerciseAnalyzer.analyzeMountainClimbers(shoulder: bodyPoints[.rightShoulder], hip: bodyPoints[.rightHip], knee: bodyPoints[.rightKnee])
+            result = combinedResult(left: leftResult, right: rightResult)
+
         case .donkeyKicks:
-            let shoulder = bodyPoints[.leftShoulder]
-            let hip = bodyPoints[.leftHip]
-            let knee = bodyPoints[.leftKnee]
-            result = ExerciseAnalyzer.analyzeDonkeyKicks(shoulder: shoulder, hip: hip, knee: knee)
-            
+            let leftResult  = ExerciseAnalyzer.analyzeDonkeyKicks(shoulder: bodyPoints[.leftShoulder],  hip: bodyPoints[.leftHip],  knee: bodyPoints[.leftKnee])
+            let rightResult = ExerciseAnalyzer.analyzeDonkeyKicks(shoulder: bodyPoints[.rightShoulder], hip: bodyPoints[.rightHip], knee: bodyPoints[.rightKnee])
+            result = combinedResult(left: leftResult, right: rightResult)
+
         case .crunch:
-            let shoulder = bodyPoints[.leftShoulder]
-            let hip = bodyPoints[.leftHip]
-            let knee = bodyPoints[.leftKnee]
-            result = ExerciseAnalyzer.analyzeCrunch(shoulder: shoulder, hip: hip, knee: knee)
-            
+            let leftResult  = ExerciseAnalyzer.analyzeCrunch(shoulder: bodyPoints[.leftShoulder],  hip: bodyPoints[.leftHip],  knee: bodyPoints[.leftKnee])
+            let rightResult = ExerciseAnalyzer.analyzeCrunch(shoulder: bodyPoints[.rightShoulder], hip: bodyPoints[.rightHip], knee: bodyPoints[.rightKnee])
+            result = combinedResult(left: leftResult, right: rightResult)
+
         case .bentOverRow:
-            let shoulder = bodyPoints[.leftShoulder]
-            let elbow = bodyPoints[.leftElbow]
-            let wrist = bodyPoints[.leftWrist]
-            result = ExerciseAnalyzer.analyzeBentOverRow(shoulder: shoulder, elbow: elbow, wrist: wrist)
-            
+            let leftResult  = ExerciseAnalyzer.analyzeBentOverRow(shoulder: bodyPoints[.leftShoulder],  elbow: bodyPoints[.leftElbow],  wrist: bodyPoints[.leftWrist])
+            let rightResult = ExerciseAnalyzer.analyzeBentOverRow(shoulder: bodyPoints[.rightShoulder], elbow: bodyPoints[.rightElbow], wrist: bodyPoints[.rightWrist])
+            result = combinedResult(left: leftResult, right: rightResult)
+
         case .sumoSquat:
-            let hip = bodyPoints[.leftHip]
-            let knee = bodyPoints[.leftKnee]
-            let ankle = bodyPoints[.leftAnkle]
-            result = ExerciseAnalyzer.analyzeSumoSquat(hip: hip, knee: knee, ankle: ankle)
-            
+            let leftResult  = ExerciseAnalyzer.analyzeSumoSquat(hip: bodyPoints[.leftHip],  knee: bodyPoints[.leftKnee],  ankle: bodyPoints[.leftAnkle])
+            let rightResult = ExerciseAnalyzer.analyzeSumoSquat(hip: bodyPoints[.rightHip], knee: bodyPoints[.rightKnee], ankle: bodyPoints[.rightAnkle])
+            result = combinedResult(left: leftResult, right: rightResult)
+
         case .goodMornings:
-            let shoulder = bodyPoints[.leftShoulder]
-            let hip = bodyPoints[.leftHip]
-            let knee = bodyPoints[.leftKnee]
-            result = ExerciseAnalyzer.analyzeGoodMornings(shoulder: shoulder, hip: hip, knee: knee)
-            
+            let leftResult  = ExerciseAnalyzer.analyzeGoodMornings(shoulder: bodyPoints[.leftShoulder],  hip: bodyPoints[.leftHip],  knee: bodyPoints[.leftKnee])
+            let rightResult = ExerciseAnalyzer.analyzeGoodMornings(shoulder: bodyPoints[.rightShoulder], hip: bodyPoints[.rightHip], knee: bodyPoints[.rightKnee])
+            result = combinedResult(left: leftResult, right: rightResult)
+
         case .treePose:
-            let hip = bodyPoints[.leftHip]
-            let knee = bodyPoints[.leftKnee]
-            let ankle = bodyPoints[.leftAnkle]
-            result = ExerciseAnalyzer.analyzeTreePose(hip: hip, knee: knee, ankle: ankle)
-            
+            // Yoga: dengede duran ayak (sol) analiz edilir
+            let leftResult  = ExerciseAnalyzer.analyzeTreePose(hip: bodyPoints[.leftHip],  knee: bodyPoints[.leftKnee],  ankle: bodyPoints[.leftAnkle])
+            let rightResult = ExerciseAnalyzer.analyzeTreePose(hip: bodyPoints[.rightHip], knee: bodyPoints[.rightKnee], ankle: bodyPoints[.rightAnkle])
+            result = combinedResult(left: leftResult, right: rightResult)
+
         case .warriorPose:
-            let hip = bodyPoints[.leftHip]
-            let shoulder = bodyPoints[.leftShoulder]
-            let wrist = bodyPoints[.leftWrist]
-            result = ExerciseAnalyzer.analyzeWarriorPose(hip: hip, shoulder: shoulder, wrist: wrist)
+            let leftResult  = ExerciseAnalyzer.analyzeWarriorPose(hip: bodyPoints[.leftHip],  shoulder: bodyPoints[.leftShoulder],  wrist: bodyPoints[.leftWrist])
+            let rightResult = ExerciseAnalyzer.analyzeWarriorPose(hip: bodyPoints[.rightHip], shoulder: bodyPoints[.rightShoulder], wrist: bodyPoints[.rightWrist])
+            result = combinedResult(left: leftResult, right: rightResult)
         }
-        
+
         self.formPercentage = result.percentage
         self.feedbackMessage = result.message
-        
+
+        // Watch'a form verisi gönder
+        WatchConnectivityManager.shared.sendFormDataToWatch(
+            formPercentage: result.percentage,
+            isResting: false
+        )
+
         // Tekrar veya Süre sayacı mantığı
         if currentExercise.isYoga {
             if result.state == .up {
-                // Stabil duruşta süreyi (repCount) say
                 if let lastStable = lastStableTime {
                     let elapsed = Date().timeIntervalSince(lastStable)
                     if elapsed >= 1.0 {
@@ -207,7 +222,6 @@ class PoseEstimator: ObservableObject {
                         GamificationManager.shared.addRep()
                         WatchConnectivityManager.shared.sendExerciseDataToWatch(exerciseName: currentExercise.rawValue, repCount: repCount)
                         lastStableTime = Date()
-                        // Her 5 saniyede bir sesli bildirim yapalım
                         if repCount % 5 == 0 {
                             SpeechManager.shared.speak("\(repCount) saniye", force: true)
                         }
@@ -216,11 +230,9 @@ class PoseEstimator: ObservableObject {
                     lastStableTime = Date()
                 }
             } else {
-                // Denge bozulduğunda süreyi durdur
                 lastStableTime = nil
             }
         } else {
-            // Normal tekrar sayacı
             if result.state == .down && !isDown {
                 isDown = true
                 UIImpactFeedbackGenerator(style: .medium).impactOccurred()
@@ -233,14 +245,16 @@ class PoseEstimator: ObservableObject {
                 UIImpactFeedbackGenerator(style: .heavy).impactOccurred()
             }
         }
-        
+
         // Sesli geri bildirim mantığı
         if result.message != lastSpokenMessage {
-            // Sadece önemli feedbackleri okumak için filtreleme yapabiliriz
-            if result.message.contains("Mükemmel") || result.message.contains("Harika") || result.message.contains("Çok fazla") || result.message.contains("Daha") || result.message.contains("İyi") {
+            if result.message.contains("Mükemmel") || result.message.contains("Harika") ||
+               result.message.contains("Çok fazla") || result.message.contains("Daha") ||
+               result.message.contains("İyi") {
                 SpeechManager.shared.speak(result.message)
                 lastSpokenMessage = result.message
             }
         }
     }
 }
+

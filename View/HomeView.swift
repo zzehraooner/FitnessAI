@@ -19,6 +19,23 @@ struct HomeView: View {
                         .font(.title3)
                         .foregroundColor(.gray)
                     
+                    // AI Koç Butonu
+                    NavigationLink(destination: AICoachView()) {
+                        HStack {
+                            Image(systemName: "brain.head.profile")
+                                .font(.title2)
+                            Text("AI Koç ile Konuş")
+                                .font(.headline)
+                            Spacer()
+                            Image(systemName: "chevron.right")
+                        }
+                        .foregroundColor(.white)
+                        .padding()
+                        .background(LinearGradient(colors: [.purple, .indigo], startPoint: .leading, endPoint: .trailing))
+                        .cornerRadius(20)
+                    }
+                    .padding(.bottom, 10)
+                    
                     Spacer()
                     
                     // Egzersiz Seçim Butonları

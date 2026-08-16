@@ -1,85 +1,118 @@
 import SwiftUI
-import FirebaseFirestore
-import FirebaseAuth
-
-struct LeaderboardUser: Identifiable {
-    let id: String
-    let steps: Double
-}
 
 struct LeaderboardView: View {
-    @ObservedObject var firebaseManager: FirebaseManager
+    @StateObject private var socialManager = SocialManager.shared
     
     var body: some View {
-        ZStack {
-            Color.black.edgesIgnoringSafeArea(.all)
-            
-            VStack {
-                Text("Liderlik Tablosu")
-                    .font(.largeTitle)
-                    .fontWeight(.heavy)
-                    .foregroundColor(.white)
-                    .padding(.top, 30)
+        NavigationStack {
+            ZStack {
+                Color.black.edgesIgnoringSafeArea(.all)
                 
-                Text("En çok adım atanlar")
-                    .foregroundColor(.gray)
-                    .padding(.bottom, 20)
-                
-                if firebaseManager.leaderboard.isEmpty {
-                    Spacer()
-                    ProgressView()
-                        .progressViewStyle(CircularProgressViewStyle(tint: .cyan))
-                        .scaleEffect(2)
-                    Text("Veriler yükleniyor...")
-                        .foregroundColor(.gray)
-                        .padding(.top)
-                    Spacer()
-                } else {
+                VStack(spacing: 20) {
+                    
+                    // Başlık
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Liderlik Tablosu")
+                            .font(.largeTitle).fontWeight(.heavy).foregroundColor(.white)
+                        Text("En iyiler arasına gir, rozetlerini göster!")
+                            .font(.subheadline).foregroundColor(.gray)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal)
+                    .padding(.top, 20)
+                    
+                    // Liste
                     ScrollView {
-                        VStack(spacing: 15) {
-                            ForEach(Array(firebaseManager.leaderboard.enumerated()), id: \.element.id) { index, user in
-                                HStack {
-                                    Text("\(index + 1)")
-                                        .font(.title2)
-                                        .fontWeight(.bold)
-                                        .foregroundColor(index == 0 ? .yellow : (index == 1 ? .gray : (index == 2 ? .orange : .white)))
-                                        .frame(width: 30)
-                                    
-                                    Image(systemName: "person.circle.fill")
-                                        .font(.title)
-                                        .foregroundColor(.cyan)
-                                    
-                                    Text(user.id == Auth.auth().currentUser?.uid ? "Ben" : "Kullanıcı")
-                                        .font(.headline)
-                                        .foregroundColor(.white)
-                                    
-                                    Spacer()
-                                    
-                                    Text("\(Int(user.steps))")
-                                        .font(.title3)
-                                        .fontWeight(.bold)
-                                        .foregroundColor(.green)
-                                    
-                                    Text("adım")
-                                        .font(.caption)
-                                        .foregroundColor(.gray)
-                                }
-                                .padding()
-                                .background(Color.white.opacity(0.1))
-                                .cornerRadius(15)
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: 15)
-                                        .stroke(user.id == Auth.auth().currentUser?.uid ? Color.cyan : Color.clear, lineWidth: 2)
-                                )
-                                .padding(.horizontal)
+                        LazyVStack(spacing: 12) {
+                            ForEach(Array(socialManager.leaderboard.enumerated()), id: \.element.id) { index, entry in
+                                LeaderboardRow(entry: entry, rank: index + 1)
                             }
                         }
+                        .padding(.horizontal)
+                        .padding(.bottom, 30)
                     }
                 }
             }
+            .navigationBarHidden(true)
+            .onAppear {
+                socialManager.fetchLeaderboard()
+                
+                // Kendi XP'mizi senkronize edelim (Gerçekte userName Auth'tan veya User profile'dan gelir)
+                socialManager.syncMyScore(
+                    totalXP: GamificationManager.shared.totalXP,
+                    level: GamificationManager.shared.level,
+                    userName: "Ben (Zehra)"
+                )
+            }
         }
-        .onAppear {
-            firebaseManager.fetchLeaderboard()
+    }
+}
+
+struct LeaderboardRow: View {
+    let entry: LeaderboardEntry
+    let rank: Int
+    
+    private var rankColor: Color {
+        switch rank {
+        case 1: return Color.yellow
+        case 2: return Color.gray
+        case 3: return Color(red: 0.8, green: 0.5, blue: 0.2)
+        default: return Color.white.opacity(0.1)
         }
+    }
+    
+    var body: some View {
+        HStack(spacing: 16) {
+            
+            // Sıralama Numarası
+            ZStack {
+                Circle()
+                    .fill(rank <= 3 ? rankColor.opacity(0.2) : Color.clear)
+                    .frame(width: 40, height: 40)
+                
+                if rank <= 3 {
+                    Circle()
+                        .stroke(rankColor, lineWidth: 2)
+                        .frame(width: 40, height: 40)
+                }
+                
+                Text("\(rank)")
+                    .font(.headline).fontWeight(.bold)
+                    .foregroundColor(rank <= 3 ? rankColor : .gray)
+            }
+            
+            // Avatar
+            Image(systemName: entry.avatarIcon)
+                .font(.title2)
+                .foregroundColor(.cyan)
+                .frame(width: 40, height: 40)
+                .background(Color.cyan.opacity(0.15))
+                .clipShape(Circle())
+            
+            // İsim & Seviye
+            VStack(alignment: .leading, spacing: 4) {
+                Text(entry.userName)
+                    .font(.headline).fontWeight(.semibold)
+                    .foregroundColor(.white)
+                
+                Text("Seviye \(entry.level)")
+                    .font(.caption2).foregroundColor(.gray)
+            }
+            
+            Spacer()
+            
+            // XP
+            VStack(alignment: .trailing, spacing: 2) {
+                Text("\(entry.totalXP)")
+                    .font(.subheadline).fontWeight(.bold)
+                    .foregroundColor(.orange)
+                Text("XP")
+                    .font(.caption2).foregroundColor(.gray)
+            }
+        }
+        .padding(16)
+        .background(Color.white.opacity(0.06))
+        .cornerRadius(18)
+        .overlay(RoundedRectangle(cornerRadius: 18).stroke(Color.white.opacity(0.1), lineWidth: 1))
     }
 }

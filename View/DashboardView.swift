@@ -93,6 +93,23 @@ struct DashboardView: View {
                         }
                         .padding(.horizontal)
                         
+                        // Antrenman Planlayıcı Butonu
+                        NavigationLink(destination: WorkoutPlannerView()) {
+                            HStack {
+                                Image(systemName: "calendar.badge.clock")
+                                    .foregroundColor(.cyan)
+                                Text("Haftalık Antrenman Planlayıcı")
+                                Spacer()
+                                Image(systemName: "chevron.right")
+                            }
+                            .font(.headline)
+                            .foregroundColor(.white)
+                            .padding()
+                            .background(Color.white.opacity(0.1))
+                            .cornerRadius(15)
+                        }
+                        .padding(.horizontal)
+                        
                         // Verileri Buluta Kaydet Butonu
                         Button(action: {
                             viewModel.saveToCloud()

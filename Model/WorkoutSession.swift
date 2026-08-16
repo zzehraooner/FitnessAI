@@ -7,4 +7,6 @@ struct WorkoutSession: Identifiable, Codable {
     let durationSeconds: Int
     let averageFormPercentage: Double
     let date: Date
+    var routineTitle: String?
+    var caloriesBurned: Double?
 }
